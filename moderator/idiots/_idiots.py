@@ -38,6 +38,9 @@ class IdiotRegistry:
         if self._idiots.get(key) is idiot:
             del self._idiots[key]
 
+    def all(self):
+        return list(self._idiots.values())
+
     def snapshot(self):
         return [
             {

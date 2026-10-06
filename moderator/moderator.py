@@ -4,16 +4,20 @@
 # Notes   : Provides persistent idiot connections, live status, and manual test prompts.
 ###################
 
+import os
+
 from fastapi import FastAPI, HTTPException, WebSocket
 
 from idiots._idiots import IdiotRegistry
 from operations.connections import IdiotConnections, connect_idiot
+from operations.roomlog import RoomLog
 
 
 app = FastAPI(title="D.I.P.S.H.I.T. Moderator")
 connections = IdiotConnections()
 registry = IdiotRegistry()
-room = []
+room_log = RoomLog(os.getenv("DIPSHIT_ROOM_LOG", "/data/room.jsonl"))
+room = room_log.load()
 
 
 @app.get("/api/idiots")
@@ -66,4 +70,4 @@ async def prompt_idiot(name: str, payload: dict):
 
 @app.websocket("/ws/idiot")
 async def idiot_connection(websocket: WebSocket):
-    await connect_idiot(websocket, registry, connections, room)
+    await connect_idiot(websocket, registry, connections, room, room_log)

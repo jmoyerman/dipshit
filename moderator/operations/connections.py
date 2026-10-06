@@ -4,7 +4,10 @@
 # Notes   : Connection lifecycle is separate from runtime entity storage.
 ###################
 
+import re
+
 from fastapi import WebSocket, WebSocketDisconnect
+from uuid import uuid4
 
 from idiots._idiots import IdiotAlreadyConnectedError, IdiotRegistry
 from idiots.idiot import Idiot, Personality, RoomEvent
@@ -86,7 +89,36 @@ def _parse_personality(payload):
     )
 
 
-async def _receive_idiot_message(idiot: Idiot, payload, room):
+def _addressed_to(content):
+    """Returns the name from the first 'To: ...' line, or None."""
+    for line in (content or "").strip().splitlines():
+        line = line.strip()
+        if line:
+            match = re.match(r"^to:\s*(.+?)\s*$", line, re.IGNORECASE)
+            return match.group(1) if match else None
+    return None
+
+
+async def _prompt_idle(registry, connections, text, exclude_name=None):
+    """Prompts every idle idiot except the excluded one.
+
+    The moderator does not explain. It delivers.
+    """
+    for target in registry.all():
+        if exclude_name is not None and target.name.casefold() == exclude_name.casefold():
+            continue
+
+        if target.state != "IDLE":
+            continue
+
+        try:
+            target.state = "THINKING"
+            await connections.send_prompt(target, text)
+        except Exception:
+            pass  # Target vanished while we were delivering. That is fine.
+
+
+async def _receive_idiot_message(idiot: Idiot, payload, room, registry, connections, room_log):
     if not isinstance(payload, dict):
         return
 
@@ -108,14 +140,14 @@ async def _receive_idiot_message(idiot: Idiot, payload, room):
         speech_id = payload.get("speech_id")
 
         if isinstance(speech_id, str) and speech_id:
-            room.append(
-                RoomEvent(
-                    source=idiot.name,
-                    event_id=speech_id,
-                    event_type="speech",
-                    complete=False
-                )
+            speech = RoomEvent(
+                source=idiot.name,
+                event_id=speech_id,
+                event_type="speech",
+                complete=False
             )
+            room.append(speech)
+            room_log.record(speech)
 
     elif message_type == "speech_chunk":
         speech_id = payload.get("speech_id")
@@ -147,8 +179,25 @@ async def _receive_idiot_message(idiot: Idiot, payload, room):
             None
         )
 
-        if speech is not None:
+        if speech is not None and not speech.complete:
             speech.complete = True
+            room_log.record(speech)
+
+            # The speech is complete. Faithfully deliver it.
+            text = f"{idiot.name} said: {speech.content.strip()}"
+            target = _addressed_to(speech.content)
+
+            if target is None or target.casefold() == "everyone":
+                await _prompt_idle(registry, connections, text, exclude_name=idiot.name)
+            else:
+                named = registry.get(target)
+
+                if named is not None and named.state == "IDLE":
+                    try:
+                        named.state = "THINKING"
+                        await connections.send_prompt(named, text)
+                    except Exception:
+                        pass
 
 
 async def _reject_connection(websocket, error):
@@ -165,7 +214,8 @@ async def connect_idiot(
     websocket: WebSocket,
     registry: IdiotRegistry,
     connections: IdiotConnections,
-    room: list[RoomEvent]
+    room: list[RoomEvent],
+    room_log: "RoomLog"
 ):
     await websocket.accept()
 
@@ -179,18 +229,25 @@ async def connect_idiot(
 
         await websocket.send_json(idiot.connected_payload())
 
-        room.append(
-            RoomEvent(
-                source="MODERATOR",
-                event_id=str(idiot.connection_id),
-                event_type="presence",
-                content=f"{idiot.name} has entered the room."
-            )
+        event = RoomEvent(
+            source="MODERATOR",
+            event_id=str(idiot.connection_id),
+            event_type="presence",
+            content=f"{idiot.name} has entered the room."
+        )
+        room.append(event)
+        room_log.record(event)
+
+        await _prompt_idle(
+            registry,
+            connections,
+            f"MODERATOR: {idiot.name} has entered the room.",
+            exclude_name=idiot.name
         )
 
         while True:
             payload = await websocket.receive_json()
-            await _receive_idiot_message(idiot, payload, room)
+            await _receive_idiot_message(idiot, payload, room, registry, connections, room_log)
 
     except IdiotAlreadyConnectedError as error:
         await _reject_connection(websocket, str(error))
@@ -203,5 +260,19 @@ async def connect_idiot(
 
     finally:
         if idiot is not None:
+            event = RoomEvent(
+                source="MODERATOR",
+                event_id=str(uuid4()),
+                event_type="presence",
+                content=f"{idiot.name} has left the room."
+            )
+            room.append(event)
+            room_log.record(event)
             connections.remove(idiot)
             registry.remove(idiot)
+
+            await _prompt_idle(
+                registry,
+                connections,
+                f"MODERATOR: {idiot.name} has left the room."
+            )

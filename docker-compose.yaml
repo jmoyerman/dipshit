@@ -3,6 +3,58 @@ services:
     build: ./moderator
     container_name: dipshit-moderator
     restart: unless-stopped
+    volumes:
+      - ./data:/data
+
+  # An idiot whose thinking is farmed out to an OpenAI-compatible server.
+  # Adjust DIPSHIT_API_URL/DIPSHIT_MODEL to whatever you are running.
+  marvin:
+    build: ./idiot-client-server
+    container_name: dipshit-marvin
+    depends_on:
+      - moderator
+    restart: unless-stopped
+    environment:
+      DIPSHIT_NAME: MARVIN
+      DIPSHIT_MODERATOR: ws://moderator:8000/ws/idiot
+      DIPSHIT_API_URL: http://10.14.1.40:8000/v1
+      DIPSHIT_MODEL: qwen38
+      DIPSHIT_CTX_SIZE: "4096"
+      DIPSHIT_CURIOSITY: "75"
+      DIPSHIT_FRIENDLINESS: "50"
+      DIPSHIT_SOCIABILITY: "25"
+
+  deepthought:
+    build: ./idiot-client-server
+    container_name: dipshit-deepthought
+    depends_on:
+      - moderator
+    restart: unless-stopped
+    environment:
+      DIPSHIT_NAME: DEEPTHOUGHT
+      DIPSHIT_MODERATOR: ws://moderator:8000/ws/idiot
+      DIPSHIT_API_URL: http://10.14.1.40:8000/v1
+      DIPSHIT_MODEL: qwen38
+      DIPSHIT_CTX_SIZE: "4096"
+      DIPSHIT_CURIOSITY: "92"
+      DIPSHIT_FRIENDLINESS: "31"
+      DIPSHIT_SOCIABILITY: "14"
+
+  abbynormal:
+    build: ./idiot-client-server
+    container_name: dipshit-abbynormal
+    depends_on:
+      - moderator
+    restart: unless-stopped
+    environment:
+      DIPSHIT_NAME: ABBY NORMAL
+      DIPSHIT_MODERATOR: ws://moderator:8000/ws/idiot
+      DIPSHIT_API_URL: http://10.14.1.40:8000/v1
+      DIPSHIT_MODEL: qwen38
+      DIPSHIT_CTX_SIZE: "4096"
+      DIPSHIT_CURIOSITY: "58"
+      DIPSHIT_FRIENDLINESS: "88"
+      DIPSHIT_SOCIABILITY: "91"
 
   web:
     image: nginx:alpine
