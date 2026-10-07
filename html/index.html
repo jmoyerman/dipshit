@@ -33,7 +33,7 @@ const layoutSelector=document.getElementById("layoutSelector");
 let idiots=[];
 let roomEvents=[];
 const promptValues={};
-let paneSources=["ROOM","MARVIN","EMPTY","EMPTY","EMPTY","EMPTY"];
+let paneSources=["ROOM","EMPTY","EMPTY","EMPTY","EMPTY","EMPTY"];
 
 function sourceNames(){return ["ROOM",...idiots.map(i=>i.name),"EMPTY"]}
 
@@ -43,13 +43,19 @@ function sourceOptions(selected){
 
 function sourceFor(name){return idiots.find(i=>i.name===name)}
 
+function roomTimestamp(value){
+    const date=new Date(value);
+    return date.toISOString().slice(0,19).replace("T"," ");
+}
+
 function roomText(){
     if(!roomEvents.length)return "NO ROOM EVENTS YET";
 
     return roomEvents.map(event=>{
         const status=event.event_type==="speech"&&!event.complete?" [SPEAKING]":"";
+        const prefix=`${roomTimestamp(event.started_at)} - ${event.source}${status} > `;
         const content=event.content.replace(/^\s+/,"");
-        return `${event.source}${status} > ${content}`;
+        return content.replace(/(^|\n)(?=To:\s*[^\n]+)/g, `$1${prefix}`);
     }).join("\n\n");
 }
 
@@ -221,6 +227,7 @@ async function refresh(){
 }
 
 layoutSelector.addEventListener("change",renderLayout);
+renderLayout();
 refresh();
 setInterval(refresh,1000);
 </script>

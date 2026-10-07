@@ -21,6 +21,7 @@ class RoomEvent:
     source: str
     event_id: str
     event_type: str
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     content: str = ""
     complete: bool = True
 
@@ -33,6 +34,8 @@ class Idiot:
         default_factory=lambda: datetime.now(timezone.utc)
     )
     connection_id: UUID = field(default_factory=uuid4)
+    has_received_message: bool = False
+    message_queue: list[dict] = field(default_factory=list)
     state: str = "IDLE"
     trace: str = ""
 

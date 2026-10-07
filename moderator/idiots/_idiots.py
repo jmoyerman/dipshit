@@ -32,14 +32,14 @@ class IdiotRegistry:
     def get(self, name):
         return self._idiots.get(self._key(name))
 
+    def idiots(self):
+        return list(self._idiots.values())
+
     def remove(self, idiot: Idiot):
         key = self._key(idiot.name)
 
         if self._idiots.get(key) is idiot:
             del self._idiots[key]
-
-    def all(self):
-        return list(self._idiots.values())
 
     def snapshot(self):
         return [

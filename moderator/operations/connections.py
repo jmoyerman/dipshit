@@ -4,13 +4,17 @@
 # Notes   : Connection lifecycle is separate from runtime entity storage.
 ###################
 
-import re
+import json
+from datetime import datetime, timezone
 
 from fastapi import WebSocket, WebSocketDisconnect
 from uuid import uuid4
 
 from idiots._idiots import IdiotAlreadyConnectedError, IdiotRegistry
 from idiots.idiot import Idiot, Personality, RoomEvent
+
+
+INITIAL_PROMPT = """You are <botname>. You are in a room with other people. You receive messages. Decide if you wish to respond to each message. Your messages should be more engaging than simply repeating what you received. Your response may contain multiple messages. Each message must be a SINGLE LINE with NO LINE BREAKS beginning with "To: everyone" or "To: <name>" to indicate who should receive your message. Replace <name> with the name of the person you are addressing. Provide only your messages; you do not need to include an explanation or rationale. system messages are general information about the room. You may act upon this information however you wish, but do not address a message To: moderator. You may initiate your own messages. In any turn, you may respond to the messages in the payload you receive or initiate a new message. If you do not wish to respond to a message, say exactly "N_S" on a line by itself. """
 
 
 class IdiotConnections:
@@ -26,6 +30,58 @@ class IdiotConnections:
 
     def remove(self, idiot: Idiot):
         self._websockets.pop(self._key(idiot.name), None)
+
+    async def send_message(self, idiot: Idiot, message: dict):
+        idiot.message_queue.append(
+            {
+                "message": message,
+                "queued_at": datetime.now(timezone.utc)
+            }
+        )
+
+        if idiot.state == "IDLE":
+            await self.send_queued_messages(idiot)
+
+    async def send_queued_messages(self, idiot: Idiot):
+        if idiot.state != "IDLE" or not idiot.message_queue:
+            return
+
+        queued_messages = idiot.message_queue
+        idiot.message_queue = []
+        delivered_at = datetime.now(timezone.utc)
+
+        messages = []
+
+        for queued_message in queued_messages:
+            message = queued_message["message"].copy()
+            age_seconds = max(
+                0,
+                int((delivered_at - queued_message["queued_at"]).total_seconds())
+            )
+            message["message_age"] = f"{age_seconds} seconds"
+            messages.append(message)
+
+        prompt = json.dumps(
+            {"messages": [{"message": message} for message in messages]},
+            separators=(",", ":")
+        )
+
+        if not idiot.has_received_message:
+            prompt = (
+                INITIAL_PROMPT.replace("<botname>", idiot.name)
+                + "\n\n"
+                + prompt
+            )
+            idiot.has_received_message = True
+
+        idiot.state = "THINKING"
+
+        try:
+            await self.send_prompt(idiot, prompt)
+        except Exception:
+            idiot.message_queue = queued_messages + idiot.message_queue
+            idiot.state = "IDLE"
+            raise
 
     async def send_prompt(self, idiot: Idiot, prompt: str):
         websocket = self._websockets.get(self._key(idiot.name))
@@ -89,36 +145,14 @@ def _parse_personality(payload):
     )
 
 
-def _addressed_to(content):
-    """Returns the name from the first 'To: ...' line, or None."""
-    for line in (content or "").strip().splitlines():
-        line = line.strip()
-        if line:
-            match = re.match(r"^to:\s*(.+?)\s*$", line, re.IGNORECASE)
-            return match.group(1) if match else None
-    return None
-
-
-async def _prompt_idle(registry, connections, text, exclude_name=None):
-    """Prompts every idle idiot except the excluded one.
-
-    The moderator does not explain. It delivers.
-    """
-    for target in registry.all():
-        if exclude_name is not None and target.name.casefold() == exclude_name.casefold():
-            continue
-
-        if target.state != "IDLE":
-            continue
-
-        try:
-            target.state = "THINKING"
-            await connections.send_prompt(target, text)
-        except Exception:
-            pass  # Target vanished while we were delivering. That is fine.
-
-
-async def _receive_idiot_message(idiot: Idiot, payload, room, registry, connections, room_log):
+async def _receive_idiot_message(
+    idiot: Idiot,
+    payload,
+    registry: IdiotRegistry,
+    connections: IdiotConnections,
+    room,
+    room_log
+):
     if not isinstance(payload, dict):
         return
 
@@ -129,6 +163,9 @@ async def _receive_idiot_message(idiot: Idiot, payload, room, registry, connecti
 
         if state in {"IDLE", "SPEAKING", "THINKING"}:
             idiot.state = state
+
+            if state == "IDLE":
+                await connections.send_queued_messages(idiot)
 
     elif message_type == "trace":
         content = payload.get("content")
@@ -181,23 +218,54 @@ async def _receive_idiot_message(idiot: Idiot, payload, room, registry, connecti
 
         if speech is not None and not speech.complete:
             speech.complete = True
+
+            if speech.content.strip() == "N_S":
+                room.remove(speech)
+                return
+
             room_log.record(speech)
 
-            # The speech is complete. Faithfully deliver it.
-            text = f"{idiot.name} said: {speech.content.strip()}"
-            target = _addressed_to(speech.content)
+            messages = [
+                line.strip()
+                for line in speech.content.splitlines()
+                if line.strip().casefold().startswith("to:")
+            ]
 
-            if target is None or target.casefold() == "everyone":
-                await _prompt_idle(registry, connections, text, exclude_name=idiot.name)
-            else:
-                named = registry.get(target)
+            for content in messages:
+                routing, separator, remainder = content.partition(":")
 
-                if named is not None and named.state == "IDLE":
-                    try:
-                        named.state = "THINKING"
-                        await connections.send_prompt(named, text)
-                    except Exception:
-                        pass
+                if not separator or routing.strip().casefold() != "to":
+                    continue
+
+                recipient_name = remainder.split(None, 1)[0].rstrip(",")
+
+                if recipient_name.casefold() == "everyone":
+                    recipients = [
+                        recipient
+                        for recipient in registry.idiots()
+                        if recipient is not idiot
+                    ]
+                    is_private = "no"
+                else:
+                    recipient = registry.get(recipient_name)
+                    recipients = (
+                        [recipient]
+                        if recipient is not None and recipient is not idiot
+                        else []
+                    )
+                    is_private = "yes"
+
+                for recipient in recipients:
+                    await connections.send_message(
+                        recipient,
+                        {
+                            "sent_from": idiot.name,
+                            "message_type": "speech",
+                            "is_private": is_private,
+                            "message_content": content,
+                            "message_age": "0 seconds"
+                        }
+                    )
 
 
 async def _reject_connection(websocket, error):
@@ -220,12 +288,15 @@ async def connect_idiot(
     await websocket.accept()
 
     idiot = None
+    joined = False
 
     try:
         payload = await websocket.receive_json()
         idiot = _parse_connection(payload)
+        existing_idiots = registry.idiots()
         registry.add(idiot)
         connections.add(idiot, websocket)
+        joined = True
 
         await websocket.send_json(idiot.connected_payload())
 
@@ -238,16 +309,28 @@ async def connect_idiot(
         room.append(event)
         room_log.record(event)
 
-        await _prompt_idle(
-            registry,
-            connections,
-            f"MODERATOR: {idiot.name} has entered the room.",
-            exclude_name=idiot.name
-        )
+        for existing_idiot in existing_idiots:
+            await connections.send_message(
+                existing_idiot,
+                {
+                    "sent_from": "moderator",
+                    "message_type": "system",
+                    "is_private": "no",
+                    "message_content": f"{idiot.name} has entered the room.",
+                    "message_age": "0 seconds"
+                }
+            )
 
         while True:
             payload = await websocket.receive_json()
-            await _receive_idiot_message(idiot, payload, room, registry, connections, room_log)
+            await _receive_idiot_message(
+                idiot,
+                payload,
+                registry,
+                connections,
+                room,
+                room_log
+            )
 
     except IdiotAlreadyConnectedError as error:
         await _reject_connection(websocket, str(error))
@@ -260,6 +343,10 @@ async def connect_idiot(
 
     finally:
         if idiot is not None:
+            connections.remove(idiot)
+            registry.remove(idiot)
+
+        if joined:
             event = RoomEvent(
                 source="MODERATOR",
                 event_id=str(uuid4()),
@@ -268,11 +355,15 @@ async def connect_idiot(
             )
             room.append(event)
             room_log.record(event)
-            connections.remove(idiot)
-            registry.remove(idiot)
 
-            await _prompt_idle(
-                registry,
-                connections,
-                f"MODERATOR: {idiot.name} has left the room."
-            )
+            for remaining_idiot in registry.idiots():
+                await connections.send_message(
+                    remaining_idiot,
+                    {
+                        "sent_from": "moderator",
+                        "message_type": "system",
+                        "is_private": "no",
+                        "message_content": f"{idiot.name} has left the room.",
+                        "message_age": "0 seconds"
+                    }
+                )

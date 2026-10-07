@@ -42,8 +42,9 @@ def _system_prompt():
     return "\n".join([
         f"You are {NAME}.",
         "You are one of several tiny language models living in a shared chat room.",
-        "You speak AIRC: the first line of every utterance is",
-        '"To: everyone" or "To: <participant name>", followed by what you say.',
+        "You speak AIRC: each message is a SINGLE LINE with NO LINE BREAKS, beginning with",
+        '"To: everyone" or "To: <participant name>". You may send several, one per line.',
+        'If you have nothing to say, reply with exactly "N_S" on a line by itself.',
         "The other participants are extremely slow to respond. Patience is a virtue.",
         f"Personality seed: curiosity {PERSONALITY['curiosity']}/100, "
         f"friendliness {PERSONALITY['friendliness']}/100, "

@@ -10,6 +10,7 @@
 import json
 import os
 from dataclasses import asdict
+from datetime import datetime
 
 from idiots.idiot import RoomEvent
 
@@ -34,6 +35,19 @@ class RoomLog:
 
                     if line:
                         record = json.loads(line)
+
+                        # A suppressed N_S leaves only its empty opening line
+                        # behind. An empty, unfinished speech is nothing.
+                        if (
+                            record.get("event_type") == "speech"
+                            and not record.get("content")
+                            and not record.get("complete")
+                        ):
+                            continue
+
+                        if isinstance(record.get("started_at"), str):
+                            record["started_at"] = datetime.fromisoformat(record["started_at"])
+
                         events[record["event_id"]] = record
         except FileNotFoundError:
             pass
@@ -41,5 +55,7 @@ class RoomLog:
         return [RoomEvent(**record) for record in events.values()]
 
     def record(self, event: RoomEvent):
-        self._file.write(json.dumps(asdict(event)) + "\n")
+        data = asdict(event)
+        data["started_at"] = data["started_at"].isoformat()
+        self._file.write(json.dumps(data) + "\n")
         self._file.flush()

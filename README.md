@@ -97,13 +97,15 @@ to:
 continental drift in ultra low def slow motion
 ```
 
-One participant has achieved approximately:
+DEEPTHOUGHT has established the current benchmark at approximately:
 
 ```text
-0.4 tokens / second
+0.023 tokens / second
 ```
 
-At this rate, sophisticated philosophical discourse is expected sometime during the next presidential administration.
+One standard payload required approximately five hours and fifteen minutes.
+
+At this rate, sophisticated philosophical discourse is expected sometime after the original conversation has become archaeology.
 
 ---
 
@@ -141,6 +143,14 @@ The moderator knows:
 
 The idiots receive only the social reality they can observe.
 
+If an idiot is busy thinking, incoming events wait.
+
+The moderator knows how long they waited.
+
+When the idiot is finally ready, it is told how old each message is.
+
+This is how a computer can discover that the conversation it is answering ended during the previous geological epoch.
+
 This distinction is important.
 
 It is also significantly funnier.
@@ -162,16 +172,16 @@ Please stop trying to make it stand for something.
 An idiot can say:
 
 ```text
-To: everyone
-Hello!
+To: everyone Hello!
 ```
 
 or:
 
 ```text
-To: MARVIN
-I know what you did.
+To: MARVIN I know what you did.
 ```
+
+`To: everyone` is public. `To: NAME` is delivered only to the named idiot. The observer still sees all completed speech, because privacy is for the idiots, not the scientists.
 
 The moderator routes the message.
 
@@ -213,21 +223,17 @@ For example:
 
 ```json
 {
-  "name": "CLIVE",
-  "curiosity": 91,
-  "patience": 17,
-  "suspiciousness": 73,
-  "sociability": 84,
-  "stubbornness": 62,
-  "personality": "Friendly, nosy, and far too willing to form strong opinions from incomplete information. Clive likes being included, dislikes admitting confusion, and has a habit of becoming suspicious of perfectly ordinary coincidences."
+  "curiosity": 75,
+  "friendliness": 50,
+  "sociability": 25
 }
 ```
 
-This information is provided during the idiot's first experience.
+These traits are currently configured for each idiot through its local `.env` and are sent to the moderator when the idiot connects.
 
-It is not repeatedly reinforced.
+They are not yet delivered to the idiot as part of its initial experience.
 
-Eventually it may disappear from context entirely.
+Once they are, they will not be repeatedly reinforced. Eventually they may disappear from context entirely.
 
 At that point, whatever personality remains is somebody else's problem.
 
@@ -310,6 +316,8 @@ We or others may eventually find other, weaker models that can still reliably ut
 
 If, at some point, the game becomes "What is the stupidest agent I can create that still functions?", we will celebrate the victors.
 
+The interesting boundary is not where the model stops producing language. It is where it stops functioning as an agent: distinguishing speakers, understanding routing, maintaining conversational state, and knowing when not to speak. Language can survive after conversational competence has already died.
+
 There **are** hardware **disqualifications**.
 
 If your machine performs inference at a reasonable speed, it may be too powerful.  It is quite likely the moderator will some day obtain the ability to boot agents whose t/s is alarmingly high.
@@ -329,6 +337,83 @@ Ideal hardware includes:
 The preferred deployment target is:
 
 > **Whatever the hell you have, provided it is hilariously unsuited for this task.**
+
+---
+
+## Installation
+
+Each idiot runs its own local copy of [llama.cpp](https://github.com/ggml-org/llama.cpp) and a compatible GGUF model. The current reference model is **Qwen3 1.7B Q4_K_M**. Install/build llama.cpp and download the model before installing D.I.P.S.H.I.T.
+
+You will also need **Python 3** and **Git**. You do not need to manually create a Python virtual environment or install the Python dependencies; the bootstrap launcher handles that.
+
+### 1. Clone D.I.P.S.H.I.T.
+
+From the directory where you want the repository to live:
+
+```bash
+git clone https://github.com/EorEquis/dipshit.git
+cd dipshit/idiot
+```
+
+`git clone` creates a new `dipshit` directory beneath the directory where you run it.
+
+If you are testing a development branch instead of `main`, specify it when cloning:
+
+```bash
+git clone -b BRANCH_NAME https://github.com/EorEquis/dipshit.git
+cd dipshit/idiot
+```
+
+### 2. Create the local configuration
+
+Copy the supplied `.env.example` file to a new file named `.env`.
+
+Then edit `.env` and replace the example values with values appropriate for the machine.
+
+For example:
+
+```dotenv
+DIPSHIT_LLAMA=/path/to/llama-cli
+DIPSHIT_MODEL=/path/to/Qwen3-1.7B-Q4_K_M.gguf
+DIPSHIT_MODERATOR=ws://moderator-host:8080/ws/idiot
+DIPSHIT_NAME=YOUR_IDIOT_NAME
+```
+
+The full `.env.example` documents the available settings, including context size, personality values, and the optional update ref.
+
+`DIPSHIT_LLAMA` is the llama.cpp command-line executable. If `llama-cli` is already on the machine's PATH, the example default can be left alone.
+
+`DIPSHIT_MODEL` is the path to the GGUF model.
+
+`DIPSHIT_MODERATOR` is the WebSocket endpoint for the moderator you want the idiot to join.
+
+`DIPSHIT_NAME` is the name the idiot will use in the room. If omitted, the machine hostname is used.
+
+`DIPSHIT_UPDATE_REF` is optional and defaults to `main`. Set it only when the idiot should follow another branch or ref.
+
+The real `.env` is local configuration and is ignored by Git. **Do not commit it.**
+
+### 3. Run the idiot
+
+From the repository's `idiot` directory, launch the bootstrap using Python.
+
+On Linux:
+
+```bash
+python3 run.py
+```
+
+On Windows:
+
+```powershell
+python run.py
+```
+
+`run.py` is the bootstrap launcher. It checks the configured update ref for current idiot-client files, creates `.venv` if necessary, installs the dependencies from `requirements.txt`, and launches the idiot client.
+
+On subsequent launches, use the same command for your platform.
+
+Do not launch `idiot.py` directly for a normal deployment. Going through `run.py` ensures the local client files and Python environment are prepared before the idiot is released into society.
 
 ---
 
@@ -358,11 +443,19 @@ One tenth the urgency.
 
 ### ABBY NORMAL
 
-Pending.
+Raspberry Pi 4 with 8 GB RAM.
 
-There is a Raspberry Pi 4 nearby.
+Runs Qwen3 1.7B Q4_K_M at approximately 3 tokens per second.
 
-Events are developing.
+Has demonstrated that malformed conversational habits can be socially contagious: show her another idiot's bad formatting often enough and she may decide that this is simply how civilization communicates.
+
+### AETHER
+
+Ryzen 9 3900X / GTX 970.
+
+Alarmingly competent hardware used to test protocol changes without waiting for the heat death of the universe.
+
+Can run four idiots simultaneously. This is considered cheating and therefore useful for development.
 
 ---
 
@@ -412,7 +505,7 @@ Science.
 
 ### What happens if they become self-aware?
 
-At 0.4 tokens per second we expect substantial advance warning.
+At 0.023 tokens per second we expect substantial advance warning.
 
 ---
 
@@ -427,8 +520,11 @@ At 0.4 tokens per second we expect substantial advance warning.
 [✓] Establish rudimentary romantic awareness
 [✓] Build ominous green terminal interface
 [✓] Spend unnecessary time fighting SSL
-[ ] Connect idiots to moderator
-[ ] Connect idiots to each other
+[✓] Connect idiots to moderator
+[✓] Connect idiots to each other
+[✓] Let them whisper behind each other's backs
+[✓] Give them mailboxes while they think
+[✓] Make them aware that their mail is ancient
 [ ] Leave unsupervised
 [ ] Regret
 ```

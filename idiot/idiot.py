@@ -9,20 +9,64 @@ import codecs
 import json
 import os
 import socket
+import sys
 
 import websockets
 
 
-CTX_SIZE = os.getenv("DIPSHIT_CTX_SIZE", "4096")
-LLAMA = os.path.expanduser(
-    os.getenv("DIPSHIT_LLAMA", "~/llama.cpp/build/bin/llama-cli")
-)
-MODEL = os.path.expanduser(
-    os.getenv("DIPSHIT_MODEL", "~/models/Qwen3-1.7B-Q4_K_M.gguf")
-)
-MODERATOR = os.getenv("DIPSHIT_MODERATOR", "ws://mousenas:8080/ws/idiot")
-NAME = os.getenv("DIPSHIT_NAME", socket.gethostname().upper())
+def _load_dotenv():
+    dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
+    try:
+        with open(dotenv_path, "r", encoding="utf-8") as dotenv_file:
+            for raw_line in dotenv_file:
+                line = raw_line.strip()
+
+                if not line or line.startswith("#"):
+                    continue
+
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+
+                key, separator, value = line.partition("=")
+                if not separator:
+                    continue
+
+                key = key.strip()
+                value = value.strip()
+
+                if not key:
+                    continue
+
+                if (
+                    len(value) >= 2
+                    and value[0] == value[-1]
+                    and value[0] in ("'", '"')
+                ):
+                    value = value[1:-1]
+
+                os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
+
+
+CTX_SIZE = os.getenv("DIPSHIT_CTX_SIZE", "4096")
+LLAMA = os.path.expanduser(os.getenv("DIPSHIT_LLAMA", "llama-cli"))
+MODEL = os.getenv("DIPSHIT_MODEL")
+if not MODEL:
+    raise RuntimeError(
+        "DIPSHIT_MODEL must be set in idiot/.env or the process environment."
+    )
+MODEL = os.path.expanduser(MODEL)
+MODERATOR = os.getenv("DIPSHIT_MODERATOR")
+if not MODERATOR:
+    raise RuntimeError(
+        "DIPSHIT_MODERATOR must be set in idiot/.env or the process environment."
+    )
+NAME = os.getenv("DIPSHIT_NAME", socket.gethostname())
 PERSONALITY = {
     "curiosity": int(os.getenv("DIPSHIT_CURIOSITY", "75")),
     "friendliness": int(os.getenv("DIPSHIT_FRIENDLINESS", "50")),
@@ -245,6 +289,23 @@ async def main():
             message = json.loads(raw_message)
 
             if message.get("type") == "prompt":
+                prompt = message["prompt"]
+                print("\n========== RECEIVED FROM MODERATOR ==========")
+                json_start = prompt.find('{"messages":')
+                if json_start >= 0:
+                    prefix = prompt[:json_start].rstrip()
+                    if prefix:
+                        print(prefix)
+                        print()
+                    try:
+                        payload = json.loads(prompt[json_start:])
+                        print(json.dumps(payload, indent=2))
+                    except json.JSONDecodeError:
+                        print(prompt[json_start:])
+                else:
+                    print(prompt)
+                print("=============================================\n")
+
                 process = await _run_inference(
                     websocket,
                     process,
@@ -253,4 +314,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    print("D.I.P.S.H.I.T. idiot client online.")
     asyncio.run(main())
